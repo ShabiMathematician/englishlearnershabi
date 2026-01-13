@@ -1,15 +1,33 @@
 // src/components/VocabularyList.tsx
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { BookMarked, Search, Volume2 } from 'lucide-react';
-import type { VocabularyItem, LearningVocabularyItem } from '../types';
+import type { VocabularyItem, LearningVocabularyItem, VocabularyQuizQuestion } from '../types';
 
 interface VocabularyListProps {
     vocabulary: VocabularyItem[];
     learningVocabulary: LearningVocabularyItem[];
     onSaveVocabulary: (item: LearningVocabularyItem) => void;
+    quizQuestions: VocabularyQuizQuestion[];
+    onRefreshQuiz: () => void;
 }
 
-const VocabularyList: React.FC<VocabularyListProps> = ({ vocabulary, learningVocabulary, onSaveVocabulary }) => {
+const VocabularyList: React.FC<VocabularyListProps> = ({
+    vocabulary,
+    learningVocabulary,
+    onSaveVocabulary,
+    quizQuestions,
+    onRefreshQuiz
+}) => {
+    const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+
+    const quizState = useMemo(() => {
+        return quizQuestions.map((question) => {
+            const selection = selectedAnswers[question.word];
+            const isCorrect = selection ? selection === question.answer : null;
+            return { ...question, selection, isCorrect };
+        });
+    }, [quizQuestions, selectedAnswers]);
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -25,6 +43,78 @@ const VocabularyList: React.FC<VocabularyListProps> = ({ vocabulary, learningVoc
                         className="pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-64 transition-all"
                     />
                 </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Quick Quiz</h2>
+                        <p className="text-sm text-slate-500">Test whether you remember your learned words.</p>
+                    </div>
+                    <button
+                        onClick={onRefreshQuiz}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 transition-colors"
+                    >
+                        Refresh Quiz
+                    </button>
+                </div>
+                {quizState.length === 0 ? (
+                    <p className="text-sm text-slate-500">Add more words to your word bank to unlock quizzes.</p>
+                ) : (
+                    <div className="space-y-4">
+                        {quizState.map((question, index) => (
+                            <div
+                                key={`${question.word}-${index}`}
+                                className="border border-slate-100 dark:border-slate-800 rounded-2xl p-4 space-y-3"
+                            >
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase tracking-wide text-slate-400">Question {index + 1}</p>
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                        {question.question}
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {question.options.map((option, optIndex) => {
+                                        const isSelected = question.selection === option;
+                                        const isCorrect = question.isCorrect === true && option === question.answer;
+                                        const isWrong = question.isCorrect === false && isSelected;
+                                        return (
+                                            <button
+                                                key={`${question.word}-${optIndex}`}
+                                                onClick={() =>
+                                                    setSelectedAnswers((prev) => ({
+                                                        ...prev,
+                                                        [question.word]: option
+                                                    }))
+                                                }
+                                                className={`text-left text-sm px-3 py-2 rounded-xl border transition-colors ${
+                                                    isCorrect
+                                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                                        : isWrong
+                                                            ? 'border-rose-500 bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'
+                                                            : isSelected
+                                                                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
+                                                                : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600'
+                                                }`}
+                                            >
+                                                {option}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {question.selection && (
+                                    <p className={`text-xs font-semibold ${
+                                        question.isCorrect
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : 'text-rose-600 dark:text-rose-400'
+                                    }`}>
+                                        {question.isCorrect ? 'Correct!' : `Not quite. Correct answer: ${question.answer}`}
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">

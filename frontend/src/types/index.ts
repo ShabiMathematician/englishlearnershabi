@@ -57,6 +57,13 @@ export interface LearningVocabularyItem {
     example_translation?: string;
 }
 
+export interface VocabularyQuizQuestion {
+    word: string;
+    question: string;
+    options: string[];
+    answer: string;
+}
+
 export interface ReadingHistory {
     id: number;
     article_id: number;

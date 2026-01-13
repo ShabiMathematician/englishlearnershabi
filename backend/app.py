@@ -3,6 +3,7 @@ Flask API服务
 """
 import os
 import json
+import random
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -10,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import func
 import requests
 
-from backend.models import init_db, get_session, User, Article, ReadingHistory, VocabularyItem, ArticleAnalysis, StandardVocabulary
+from backend.models import init_db, User, Article, ReadingHistory, VocabularyItem, ArticleAnalysis, StandardVocabulary
 from backend.recommender import ArticleRecommender
 
 app = Flask(__name__)
@@ -63,6 +64,15 @@ def fetch_example_sentence(word: str) -> str:
     except Exception:
         return ''
     return ''
+
+def resolve_definition(word: str, fallback: str, session) -> str:
+    """Resolve a definition using local vocab data when possible."""
+    if fallback:
+        return fallback
+    standard_def = session.query(StandardVocabulary.definition).filter(
+        StandardVocabulary.word == word
+    ).scalar()
+    return standard_def or ''
 
 def init_recommender():
     """初始化推荐系统"""
@@ -601,6 +611,59 @@ def get_learning_vocabulary():
     finally:
         session.close()
 
+@app.route('/api/vocabulary/quiz', methods=['GET'])
+def get_vocabulary_quiz():
+    """获取词汇测验题目"""
+    user_id = request.args.get('user_id', type=int)
+    limit = request.args.get('limit', default=5, type=int)
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    session = Session()
+    try:
+        user_vocab = session.query(VocabularyItem).filter_by(user_id=user_id).all()
+        if not user_vocab:
+            return jsonify({'questions': []})
+
+        quiz_candidates = []
+        for item in user_vocab:
+            definition = resolve_definition(item.word, item.definition, session)
+            if definition:
+                quiz_candidates.append((item.word, definition))
+
+        if not quiz_candidates:
+            return jsonify({'questions': []})
+
+        random.shuffle(quiz_candidates)
+        selected = quiz_candidates[:min(limit, len(quiz_candidates))]
+
+        distractor_pool = session.query(StandardVocabulary.definition).filter(
+            StandardVocabulary.definition.isnot(None)
+        ).order_by(func.random()).limit(50).all()
+        distractor_defs = [row.definition for row in distractor_pool if row.definition]
+
+        questions = []
+        for word, definition in selected:
+            options = [definition]
+            while len(options) < 4 and distractor_defs:
+                candidate = random.choice(distractor_defs)
+                if candidate not in options:
+                    options.append(candidate)
+            while len(options) < 4:
+                options.append(f'Definition of {word}')
+            random.shuffle(options)
+            questions.append({
+                'word': word,
+                'question': f'What is the meaning of "{word}"?',
+                'options': options,
+                'answer': definition
+            })
+
+        return jsonify({'questions': questions})
+    finally:
+        session.close()
+
 # ========== 统计信息API ==========
 
 @app.route('/api/stats/<int:user_id>', methods=['GET'])
@@ -667,6 +730,7 @@ def index():
             'get_vocabulary': 'GET /api/vocabulary/<user_id>',
             'add_vocabulary': 'POST /api/vocabulary',
             'get_learning_vocabulary': 'GET /api/vocabulary/learning?user_id=<user_id>&limit=<limit>',
+            'get_vocabulary_quiz': 'GET /api/vocabulary/quiz?user_id=<user_id>&limit=<limit>',
             'get_stats': 'GET /api/stats/<user_id>'
         }
     })

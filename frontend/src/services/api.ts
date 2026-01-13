@@ -1,4 +1,13 @@
-import type { Article, ArticleAnalysis, ReadingHistory, User, UserStats, VocabularyItem, LearningVocabularyItem } from '../types';
+import type {
+    Article,
+    ArticleAnalysis,
+    ReadingHistory,
+    User,
+    UserStats,
+    VocabularyItem,
+    LearningVocabularyItem,
+    VocabularyQuizQuestion
+} from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
@@ -89,6 +98,15 @@ export const getLearningVocabulary = async (
 ): Promise<{ vocabulary: LearningVocabularyItem[] }> => {
     return handleResponse(
         await fetch(`${API_BASE}/vocabulary/learning?user_id=${userId}&limit=${limit}`)
+    );
+};
+
+export const getVocabularyQuiz = async (
+    userId: number,
+    limit = 5
+): Promise<{ questions: VocabularyQuizQuestion[] }> => {
+    return handleResponse(
+        await fetch(`${API_BASE}/vocabulary/quiz?user_id=${userId}&limit=${limit}`)
     );
 };
 
