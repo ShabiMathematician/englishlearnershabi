@@ -17,7 +17,7 @@ from interactive_quiz import InteractiveQuiz
 class ReadingTestSystem:
     """阅读测试系统"""
     
-    def __init__(self, db_path: str = 'sqlite:///backend/english_learning.db'):
+    def __init__(self, db_path: str = 'sqlite:///english_learning.db'):
         """
         初始化系统
         

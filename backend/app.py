@@ -3,12 +3,15 @@ Flask API服务
 """
 import os
 import json
+import random
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func
+import requests
 
-from backend.models import init_db, get_session, User, Article, ReadingHistory, VocabularyItem, ArticleAnalysis
+from backend.models import init_db, User, Article, ReadingHistory, VocabularyItem, ArticleAnalysis, StandardVocabulary
 from backend.recommender import ArticleRecommender
 
 app = Flask(__name__)
@@ -16,7 +19,7 @@ CORS(app)
 
 # 配置
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///backend/english_learning.db')
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///english_learning.db')
 
 # 初始化数据库
 engine = init_db(DATABASE_URL)
@@ -24,6 +27,52 @@ Session = sessionmaker(bind=engine)
 
 # 初始化推荐器
 recommender = ArticleRecommender()
+
+def translate_text(text: str, target_lang: str = 'zh-CN') -> str:
+    """Translate text using a free translation API (MyMemory)."""
+    if not text:
+        return ''
+    try:
+        response = requests.get(
+            'https://api.mymemory.translated.net/get',
+            params={'q': text, 'langpair': f'en|{target_lang}'},
+            timeout=8
+        )
+        response.raise_for_status()
+        data = response.json()
+        translated = data.get('responseData', {}).get('translatedText', '')
+        return translated if translated and translated.lower() != 'null' else ''
+    except Exception:
+        return ''
+
+def fetch_example_sentence(word: str) -> str:
+    """Fetch an example sentence from a free dictionary API."""
+    try:
+        response = requests.get(
+            f'https://api.dictionaryapi.dev/api/v2/entries/en/{word}',
+            timeout=8
+        )
+        if response.status_code != 200:
+            return ''
+        entries = response.json()
+        for entry in entries:
+            for meaning in entry.get('meanings', []):
+                for definition in meaning.get('definitions', []):
+                    example = definition.get('example')
+                    if example:
+                        return example
+    except Exception:
+        return ''
+    return ''
+
+def resolve_definition(word: str, fallback: str, session) -> str:
+    """Resolve a definition using local vocab data when possible."""
+    if fallback:
+        return fallback
+    standard_def = session.query(StandardVocabulary.definition).filter(
+        StandardVocabulary.word == word
+    ).scalar()
+    return standard_def or ''
 
 def init_recommender():
     """初始化推荐系统"""
@@ -525,6 +574,96 @@ def get_vocabulary(user_id):
     finally:
         session.close()
 
+@app.route('/api/vocabulary/learning', methods=['GET'])
+def get_learning_vocabulary():
+    """获取标准词汇列表并提供翻译与例句"""
+    user_id = request.args.get('user_id', type=int)
+    limit = request.args.get('limit', default=6, type=int)
+    list_name = request.args.get('list_name', type=str)
+
+    session = Session()
+    try:
+        query = session.query(StandardVocabulary)
+        if list_name:
+            query = query.filter(StandardVocabulary.list_name == list_name)
+        if user_id:
+            existing_words = session.query(VocabularyItem.word).filter(
+                VocabularyItem.user_id == user_id
+            ).subquery()
+            query = query.filter(~StandardVocabulary.word.in_(existing_words))
+
+        vocab_items = query.order_by(func.random()).limit(limit).all()
+        result = []
+        for item in vocab_items:
+            example_sentence = fetch_example_sentence(item.word)
+            if not example_sentence:
+                example_sentence = f'I am learning the word "{item.word}" today.'
+            result.append({
+                'id': item.id,
+                'word': item.word,
+                'definition': item.definition,
+                'translation': translate_text(item.word),
+                'example_sentence': example_sentence,
+                'example_translation': translate_text(example_sentence)
+            })
+
+        return jsonify({'vocabulary': result})
+    finally:
+        session.close()
+
+@app.route('/api/vocabulary/quiz', methods=['GET'])
+def get_vocabulary_quiz():
+    """获取词汇测验题目"""
+    user_id = request.args.get('user_id', type=int)
+    limit = request.args.get('limit', default=5, type=int)
+
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+
+    session = Session()
+    try:
+        user_vocab = session.query(VocabularyItem).filter_by(user_id=user_id).all()
+        if not user_vocab:
+            return jsonify({'questions': []})
+
+        quiz_candidates = []
+        for item in user_vocab:
+            definition = resolve_definition(item.word, item.definition, session)
+            if definition:
+                quiz_candidates.append((item.word, definition))
+
+        if not quiz_candidates:
+            return jsonify({'questions': []})
+
+        random.shuffle(quiz_candidates)
+        selected = quiz_candidates[:min(limit, len(quiz_candidates))]
+
+        distractor_pool = session.query(StandardVocabulary.definition).filter(
+            StandardVocabulary.definition.isnot(None)
+        ).order_by(func.random()).limit(50).all()
+        distractor_defs = [row.definition for row in distractor_pool if row.definition]
+
+        questions = []
+        for word, definition in selected:
+            options = [definition]
+            while len(options) < 4 and distractor_defs:
+                candidate = random.choice(distractor_defs)
+                if candidate not in options:
+                    options.append(candidate)
+            while len(options) < 4:
+                options.append(f'Definition of {word}')
+            random.shuffle(options)
+            questions.append({
+                'word': word,
+                'question': f'What is the meaning of "{word}"?',
+                'options': options,
+                'answer': definition
+            })
+
+        return jsonify({'questions': questions})
+    finally:
+        session.close()
+
 # ========== 统计信息API ==========
 
 @app.route('/api/stats/<int:user_id>', methods=['GET'])
@@ -590,6 +729,8 @@ def index():
             'add_reading_history': 'POST /api/reading_history',
             'get_vocabulary': 'GET /api/vocabulary/<user_id>',
             'add_vocabulary': 'POST /api/vocabulary',
+            'get_learning_vocabulary': 'GET /api/vocabulary/learning?user_id=<user_id>&limit=<limit>',
+            'get_vocabulary_quiz': 'GET /api/vocabulary/quiz?user_id=<user_id>&limit=<limit>',
             'get_stats': 'GET /api/stats/<user_id>'
         }
     })
@@ -602,4 +743,3 @@ if __name__ == '__main__':
     
     # 启动服务
     app.run(debug=True, host='0.0.0.0', port=5000)
-
