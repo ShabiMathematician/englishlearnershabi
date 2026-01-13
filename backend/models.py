@@ -161,7 +161,16 @@ class VocabularyItem(Base):
     # 关系
     user = relationship("User", back_populates="vocabulary_items")
 
-def init_db(db_url='sqlite:///backend/english_learning.db'):
+class StandardVocabulary(Base):
+    """标准词汇表"""
+    __tablename__ = 'standard_vocabulary'
+
+    id = Column(Integer, primary_key=True)
+    list_name = Column(String(50))
+    word = Column(String(100), nullable=False)
+    definition = Column(Text)
+
+def init_db(db_url='sqlite:///english_learning.db'):
     """初始化数据库"""
     engine = create_engine(db_url, echo=False)
     Base.metadata.create_all(engine)
@@ -171,4 +180,3 @@ def get_session(engine):
     """获取数据库会话"""
     Session = sessionmaker(bind=engine)
     return Session()
-

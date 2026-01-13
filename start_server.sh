@@ -11,7 +11,7 @@ if [ -d "venv" ]; then
 fi
 
 # 检查数据库是否存在
-if [ ! -f "backend/english_learning.db" ]; then
+if [ ! -f "english_learning.db" ]; then
     echo "Database not found. Running setup..."
     python setup.py
 fi
@@ -36,5 +36,4 @@ echo ""
 echo "Starting API server on http://localhost:5000"
 echo "Press Ctrl+C to stop"
 echo ""
-python backend/app.py
-
+python -m backend.app
