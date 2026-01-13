@@ -1,4 +1,4 @@
-import type { Article, ArticleAnalysis, ReadingHistory, User, UserStats, VocabularyItem } from '../types';
+import type { Article, ArticleAnalysis, ReadingHistory, User, UserStats, VocabularyItem, LearningVocabularyItem } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
 
@@ -65,7 +65,13 @@ export const getReadingHistory = async (userId: number): Promise<{ history: Read
 };
 
 // Vocabulary
-export const addVocabulary = async (data: { user_id: number; word: string; article_id?: number }) => {
+export const addVocabulary = async (data: {
+    user_id: number;
+    word: string;
+    article_id?: number;
+    definition?: string;
+    example_sentence?: string;
+}) => {
     return handleResponse(await fetch(`${API_BASE}/vocabulary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -75,6 +81,15 @@ export const addVocabulary = async (data: { user_id: number; word: string; artic
 
 export const getVocabulary = async (userId: number): Promise<{ vocabulary: VocabularyItem[] }> => {
     return handleResponse(await fetch(`${API_BASE}/vocabulary/${userId}`));
+};
+
+export const getLearningVocabulary = async (
+    userId: number,
+    limit = 6
+): Promise<{ vocabulary: LearningVocabularyItem[] }> => {
+    return handleResponse(
+        await fetch(`${API_BASE}/vocabulary/learning?user_id=${userId}&limit=${limit}`)
+    );
 };
 
 // Stats
