@@ -7,7 +7,16 @@ import Reader from './components/Reader';
 import VocabularyList from './components/VocabularyList';
 import { useAuth } from './hooks/useAuth';
 import * as api from './services/api';
-import type { Article, ViewType, ArticleAnalysis, ReadingHistory, VocabularyItem, UserStats } from './types';
+import type {
+  Article,
+  ViewType,
+  ArticleAnalysis,
+  ReadingHistory,
+  VocabularyItem,
+  UserStats,
+  LearningVocabularyItem,
+  VocabularyQuizQuestion
+} from './types';
 import { GraduationCap, Loader2, AlertCircle } from 'lucide-react';
 
 function App() {
@@ -16,6 +25,8 @@ function App() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [history, setHistory] = useState<ReadingHistory[]>([]);
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
+  const [learningVocabulary, setLearningVocabulary] = useState<LearningVocabularyItem[]>([]);
+  const [vocabularyQuiz, setVocabularyQuiz] = useState<VocabularyQuizQuestion[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -45,8 +56,14 @@ function App() {
           const res = await api.getReadingHistory(user.id);
           setHistory(res.history);
         } else if (currentView === 'vocabulary') {
-          const res = await api.getVocabulary(user.id);
-          setVocabulary(res.vocabulary);
+          const [savedRes, learningRes, quizRes] = await Promise.all([
+            api.getVocabulary(user.id),
+            api.getLearningVocabulary(user.id),
+            api.getVocabularyQuiz(user.id)
+          ]);
+          setVocabulary(savedRes.vocabulary);
+          setLearningVocabulary(learningRes.vocabulary);
+          setVocabularyQuiz(quizRes.questions);
         } else if (currentView === 'stats') {
           const res = await api.getUserStats(user.id);
           setStats(res);
@@ -96,17 +113,38 @@ function App() {
     }
   };
 
-  const handleSaveVocab = async (word: string) => {
-    if (!user || !activeArticle) return;
+  const refreshVocabularyQuiz = async () => {
+    if (!user) return;
+    try {
+      const res = await api.getVocabularyQuiz(user.id);
+      setVocabularyQuiz(res.questions);
+    } catch (err) {
+      console.error('Failed to refresh vocabulary quiz:', err);
+    }
+  };
+
+  const handleSaveVocab = async (
+    word: string,
+    options?: { definition?: string; example_sentence?: string; source_article_id?: number }
+  ) => {
+    if (!user) return;
     try {
       await api.addVocabulary({
         user_id: user.id,
         word,
-        article_id: activeArticle.id
+        definition: options?.definition,
+        example_sentence: options?.example_sentence,
+        article_id: options?.source_article_id ?? activeArticle?.id
       });
       if (currentView === 'vocabulary') {
-        const res = await api.getVocabulary(user.id);
-        setVocabulary(res.vocabulary);
+        const [savedRes, learningRes, quizRes] = await Promise.all([
+          api.getVocabulary(user.id),
+          api.getLearningVocabulary(user.id),
+          api.getVocabularyQuiz(user.id)
+        ]);
+        setVocabulary(savedRes.vocabulary);
+        setLearningVocabulary(learningRes.vocabulary);
+        setVocabularyQuiz(quizRes.questions);
       }
     } catch (err) {
       console.error('Failed to save vocabulary:', err);
@@ -267,7 +305,16 @@ function App() {
 
           {currentView === 'vocabulary' && (
             <div className="animate-in slide-in-from-bottom-4 duration-500">
-              <VocabularyList vocabulary={vocabulary} />
+              <VocabularyList
+                vocabulary={vocabulary}
+                learningVocabulary={learningVocabulary}
+                quizQuestions={vocabularyQuiz}
+                onRefreshQuiz={refreshVocabularyQuiz}
+                onSaveVocabulary={(item) => handleSaveVocab(item.word, {
+                  definition: item.definition,
+                  example_sentence: item.example_sentence
+                })}
+              />
             </div>
           )}
 

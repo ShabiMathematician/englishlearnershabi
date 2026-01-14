@@ -49,7 +49,7 @@ class DataPipeline:
         self.target_language = target_language
 
         # 初始化数据库
-        self.db_url = db_url or 'sqlite:///backend/english_learning.db'
+        self.db_url = db_url or 'sqlite:///english_learning.db'
         self.engine = init_db(self.db_url)
 
         # 初始化组件
