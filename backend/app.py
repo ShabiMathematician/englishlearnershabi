@@ -642,16 +642,19 @@ def get_vocabulary_quiz():
             StandardVocabulary.definition.isnot(None)
         ).order_by(func.random()).limit(50).all()
         distractor_defs = [row.definition for row in distractor_pool if row.definition]
+        fallback_defs = [definition for _, definition in quiz_candidates]
+        distractor_defs.extend(fallback_defs)
+        distractor_defs = list(dict.fromkeys(distractor_defs))
 
         questions = []
         for word, definition in selected:
-            options = [definition]
-            while len(options) < 4 and distractor_defs:
-                candidate = random.choice(distractor_defs)
-                if candidate not in options:
-                    options.append(candidate)
+            pool = [d for d in distractor_defs if d != definition]
+            random.shuffle(pool)
+            options = [definition] + pool[:3]
             while len(options) < 4:
-                options.append(f'Definition of {word}')
+                filler = f'Definition related to {word} ({len(options) + 1})'
+                if filler not in options:
+                    options.append(filler)
             random.shuffle(options)
             questions.append({
                 'word': word,
